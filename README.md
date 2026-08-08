@@ -1,100 +1,66 @@
-# vinext-starter
+# TasteForge AI
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+TasteForge AI is a responsive, multi-page food-intelligence website. It ranks a seeded meal catalog against an editable Taste DNA profile, removes incompatible meals before scoring, explains every match, and persists saves, feedback, settings, and demo orders.
 
-## Prerequisites
-
-- Node.js `>=22.13.0`
-
-## Quick Start
+## Run locally
 
 ```bash
 npm install
 npm run dev
+```
+
+Open `http://localhost:3000`. The offline demo works without credentials.
+
+Quality checks:
+
+```bash
+npm run lint
+npx tsc --noEmit
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Firebase setup
 
-## Included Shape
+1. Create a Firebase project and a Web app.
+2. Enable **Authentication → Google**.
+3. Create a Firestore database.
+4. Copy `.env.example` to `.env.local` and enter the Web app values.
+5. Add `localhost` and each deployed hostname under **Authentication → Settings → Authorized domains**.
+6. Deploy `firestore.rules` with the Firebase CLI or paste them into the Firestore Rules editor.
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+The browser loads the official modular Firebase Web SDK from Google's CDN. This keeps the current constrained build dependency-free while retaining `initializeApp`, `getApps`, Google popup authentication, auth-state observation, Firestore reads/writes, merge semantics, and server timestamps.
 
-## Workspace Auth Headers
+## Routes
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
+- `/` — public landing page
+- `/login` — Google sign-in and offline demo entry
+- `/onboarding` — first-run Taste DNA setup
+- `/dashboard` — personalized overview
+- `/discover` — search, filter, sort, save, dismiss, like, and order
+- `/recommendations` — context-driven Food Lab generator
+- `/meal/[id]` — meal details and explanation
+- `/taste-dna` — editable profile and hard safety rules
+- `/saved`, `/history`, `/profile`, `/settings`, `/seasonal`, `/surprise-me`
 
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
+Unknown URLs render a branded 404 screen. Protected URLs redirect signed-out visitors to `/login` and preserve the return path.
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+## Recommendation architecture
 
-Treat the full name as optional and fall back to email when it is absent:
+Allergy conflicts, ingredient exclusions, and strict vegetarian/vegan conflicts are hard filters. Compatible meals receive a deterministic weighted score:
 
-```tsx
-import { headers } from "next/headers";
+- taste affinity: 40%
+- dietary fit: 20%
+- interaction/order history: 15%
+- seasonal relevance: 10%
+- health fit: 10%
+- current context: 5%
 
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
+Scores and human-readable reasons are calculated in `lib/model.ts`. Likes, saves, dismissals, ratings, and orders alter persisted state and subsequent ranking.
 
-  const displayName = fullName ?? email;
-  // ...
-}
-```
+## Persistence
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+- Offline demo: browser `localStorage`
+- Signed-in mode: merged document at `users/{uid}` in Firestore
+- Security: `firestore.rules` limits each user document and its subcollections to that authenticated owner
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+This prototype does not process payments or submit real restaurant orders.
